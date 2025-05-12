@@ -24,7 +24,7 @@ namespace TaskMonitor
             10,
             14
         };
-        public TaskMonitor(int millisecondForPolling, Serilog.ILogger logger)
+        public TaskMonitor(int millisecondForPolling, Serilog.ILogger? logger, string name = "")
         {
             TimeMSToShow = millisecondForPolling;
 
@@ -34,7 +34,14 @@ namespace TaskMonitor
 
             }
 
-            Logger = logger;
+            if(!string.IsNullOrEmpty(name))
+            {
+                MonitorName = name;
+            }
+
+            Logger = logger?.ForContext(Serilog.Core.Constants.SourceContextPropertyName, MonitorName);
+
+            Logger?.Information("Created the task monitor");
         }
         public record TaskObject
         {
@@ -53,7 +60,8 @@ namespace TaskMonitor
             /// </summary>
             public static int MaxItems = 100;
             private LimitedQueue<double> MemorizedValues { get; set; }
-            public int Count { get; set; } = 0;
+            public int Count => _count;
+            private volatile int _count = 0;
             private double _average = 0;
             public double Average => _average;
             public TaskTypeInfo()
@@ -73,7 +81,7 @@ namespace TaskMonitor
 
                 }
 
-                Count++;
+                _count++;
             }
 
             private double _lastAverage = 0;
@@ -117,7 +125,6 @@ namespace TaskMonitor
 
         public async void ShowMonitoredObject(CancellationToken token)
         {
-            Logger?.ForContext(Serilog.Core.Constants.SourceContextPropertyName, MonitorName);
 
             int i = 0;
             while (!token.IsCancellationRequested)
@@ -128,6 +135,7 @@ namespace TaskMonitor
                 text += $"########## Active task: [{_tasks.Count}],  Monitored task average process ticks, WINDOWED ITEMS FOR AVG: {TaskTypeInfo.MaxItems} ######\n";
                 text += $"{PadRightText("Type", 0)}| {PadRightText("Method", 1)}| {PadRightText("MilliS", 2)}| {PadRightText("Changed %", 3)}| {PadRightText("Closed Task", 4)}|\n";
 
+                int monitoredItem = 0;
                 foreach (var typeTask in _processAverageTime)
                 {
                     foreach (var requestMethodKV in typeTask.Value)
@@ -145,7 +153,7 @@ namespace TaskMonitor
                 text += $"{FillText('_', 0)}| {FillText('_', 1)}| {FillText('_', 2)}| {FillText('_', 3)}| {FillText('_', 4)}|\n";
 
                 ts.Stop();
-                text += $"Table creation time {ts.ElapsedMilliseconds}ms";
+                text += $"Table creation time {ts.ElapsedMilliseconds}ms, monitored {_monitoredItemFromStart}";
                 Logger?.Information(text);
 
 
@@ -164,56 +172,87 @@ namespace TaskMonitor
         }
         public volatile int LastId = 0;
         public ConcurrentBag<int> Removed = new ConcurrentBag<int>();
-        public void AddTask(Task? task, string createdBy, TypeOfTask type, string methodRequest = "")
+        volatile int _monitoredItemFromStart = 0;
+        public void AddTask(Task? task, string source, TypeOfTask type, string methodRequest = "")
         {
             if (task is null)
             {
                 return;
             }
 
-            var taskCreation = DateTime.UtcNow;
-            //task.ContinueWith(t => MeasureTime(t, taskCreation));
+            var taskAddingTimer = DateTime.UtcNow;
 
             TaskObject taskObject = new TaskObject()
             {
-                UnivoqueID = LastId++,
+                UnivoqueID = task.Id,
                 Task = task,
-                CreatedBy = createdBy,
+                CreatedBy = source,
                 Type = type,
                 MethodReq = methodRequest
             };
 
-            //task.ContinueWith(t => MeasureTime(t, taskCreation));
-            _tasks.TryAdd(taskObject.UnivoqueID, taskObject);
-
-            task.ContinueWith(t =>
+            //Logger?.Warning($"Add the task {task.Id}");
+            if(!_tasks.TryAdd(taskObject.UnivoqueID, taskObject))
             {
-                double milliseconds = Math.Round((DateTime.UtcNow - taskCreation).TotalMilliseconds, 3);
+                Logger?.Warning($"Can't add the task ID: {task.Id}");
+            }
+            else
+            {
+                _monitoredItemFromStart++;
+            }
 
-                if (!t.IsCompleted)
+            try
+            {
+                task.ContinueWith(t =>
                 {
-                    return;
-                }
 
-                if (!_tasks.TryRemove(taskObject.UnivoqueID, out var taskObj))
-                {
-                    Logger?.Warning($"Can't remove {t.Id}");
-                    return;
-                }
-                else
-                {
-                    Removed.Add(t.Id);
-                    //t.Dispose();
-                }
+                    try
+                    {
+                        double milliseconds = Math.Round((DateTime.UtcNow - taskAddingTimer).TotalMilliseconds, 3);
+                        //Logger?.Information($"Continuing the task {task.Id}");
 
-                if (!_processAverageTime[taskObj.Type].TryGetValue(taskObj.MethodReq, out var request))
-                {
-                    _processAverageTime[taskObj.Type][taskObj.MethodReq] = new TaskTypeInfo();
-                }
-                if (_processAverageTime[taskObj.Type].ContainsKey(taskObj.MethodReq))
-                    _processAverageTime[taskObj.Type][taskObj.MethodReq].AddNewTicks(milliseconds);
-            });
+                        if (_tasks.TryGetValue(taskObject.UnivoqueID, out var taskObj))
+                        {
+                            if (!t.IsCompleted)
+                            {
+                                Logger?.Warning($"Already finished {t.Id}");
+                                return;
+                            }
 
+                            if (!_tasks.TryRemove(taskObject.UnivoqueID, out var taskObjRemoved))
+                            {
+                                Logger?.Warning($"Can't remove {taskObjRemoved?.UnivoqueID}");
+                                return;
+                            }
+                            else
+                            {
+                                Removed.Add(taskObjRemoved.UnivoqueID);
+                                //t.Dispose();
+                            }
+
+                            if (!_processAverageTime[taskObj.Type].TryGetValue(taskObj.MethodReq, out var request))
+                            {
+                                _processAverageTime[taskObj.Type][taskObj.MethodReq] = new TaskTypeInfo();
+                            }
+
+                            if (_processAverageTime[taskObj.Type].ContainsKey(taskObj.MethodReq))
+                                _processAverageTime[taskObj.Type][taskObj.MethodReq].AddNewTicks(milliseconds);
+                        }
+                        else
+                        {
+                            Logger?.Warning($"{t.Id} not found in list");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger?.Error($"ERROR ON Continue task: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger?.Error($"ERROR ON Continue task: {ex.Message}");
+            }
         }
 
         private void MeasureTime(Task t, DateTime creation)

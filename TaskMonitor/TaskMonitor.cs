@@ -51,6 +51,7 @@ namespace TaskMonitor
             //public Task? Task { get; set; } = null;
             public TypeOfTask Type { get; set; } = TypeOfTask.Default;
             public string MethodReq { get; set; } = string.Empty;
+            public DateTime CreationTime { get; set; } = DateTime.UtcNow;  
         }
 
         public record TaskTypeInfo
@@ -61,7 +62,10 @@ namespace TaskMonitor
             public static int MaxItems = 100;
             private LimitedQueue<double> MemorizedValues { get; set; }
             public int Count => _count;
-            private volatile int _count = 0;
+            private int _count = 0;
+
+            private readonly object _lock = new object();
+
             private double _average = 0;
             public double Average => _average;
             public TaskTypeInfo()
@@ -81,7 +85,10 @@ namespace TaskMonitor
 
                 }
 
-                _count++;
+                lock(_lock)
+                {
+                    _count++;
+                }
             }
 
             private double _lastAverage = 0;
@@ -135,7 +142,6 @@ namespace TaskMonitor
                 text += $"########## Active task: [{_tasks.Count}],  Monitored task average process ticks, WINDOWED ITEMS FOR AVG: {TaskTypeInfo.MaxItems} ######\n";
                 text += $"{PadRightText("Type", 0)}| {PadRightText("Method", 1)}| {PadRightText("MilliS", 2)}| {PadRightText("Changed %", 3)}| {PadRightText("Closed Task", 4)}|\n";
 
-                int monitoredItem = 0;
                 foreach (var typeTask in _processAverageTime)
                 {
                     foreach (var requestMethodKV in typeTask.Value)
@@ -153,7 +159,7 @@ namespace TaskMonitor
                 text += $"{FillText('_', 0)}| {FillText('_', 1)}| {FillText('_', 2)}| {FillText('_', 3)}| {FillText('_', 4)}|\n";
 
                 ts.Stop();
-                text += $"Table creation time {ts.ElapsedMilliseconds}ms, monitored {_monitoredItemFromStart}";
+                text += $"Table creation time {ts.ElapsedMilliseconds}ms, monitored {_monitoredItemFromStart}, removed {_removedItemFrom}";
                 Logger?.Information(text);
 
 
@@ -173,14 +179,13 @@ namespace TaskMonitor
         public volatile int LastId = 0;
         public ConcurrentBag<int> Removed = new ConcurrentBag<int>();
         volatile int _monitoredItemFromStart = 0;
+        volatile int _removedItemFrom = 0;
         public void AddTask(Task? task, string source, TypeOfTask type, string methodRequest = "")
         {
             if (task is null)
             {
                 return;
             }
-
-            var taskAddingTimer = DateTime.UtcNow;
 
             TaskObject taskObject = new TaskObject()
             {
@@ -203,19 +208,20 @@ namespace TaskMonitor
 
             try
             {
-                task.ContinueWith(t =>
+                task.ContinueWith(action =>
                 {
 
                     try
                     {
-                        double milliseconds = Math.Round((DateTime.UtcNow - taskAddingTimer).TotalMilliseconds, 3);
                         //Logger?.Information($"Continuing the task {task.Id}");
 
                         if (_tasks.TryGetValue(taskObject.UnivoqueID, out var taskObj))
                         {
-                            if (!t.IsCompleted)
+                            double milliseconds = Math.Round((DateTime.UtcNow - taskObject.CreationTime).TotalMilliseconds, 3);
+
+                            if (!action.IsCompleted)
                             {
-                                Logger?.Warning($"Already finished {t.Id}");
+                                Logger?.Warning($"Already finished {action.Id}");
                                 return;
                             }
 
@@ -237,10 +243,12 @@ namespace TaskMonitor
 
                             if (_processAverageTime[taskObj.Type].ContainsKey(taskObj.MethodReq))
                                 _processAverageTime[taskObj.Type][taskObj.MethodReq].AddNewTicks(milliseconds);
+
+                            _removedItemFrom++;
                         }
                         else
                         {
-                            Logger?.Warning($"{t.Id} not found in list");
+                            Logger?.Warning($"{action.Id} not found in list");
                         }
                     }
                     catch (Exception ex)

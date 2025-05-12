@@ -1,50 +1,40 @@
-﻿using System;
+﻿using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using TaskMonitor.Common;
 using TaskMonitor.Utility;
 
 namespace TaskMonitor
 {
     public class TaskMonitor
     {
-        public enum TypeOfTask
+        public int TimeMSToShow { get; private set; } = 60000;
+        public Serilog.ILogger? Logger { get; set; } = null;
+        public string MonitorName { get; set; } = "Default monitor";
+        private List<int> ColumnsWidth { get; set; } = new List<int>()
         {
-            Default,
-            AsyncUnaryClient,
-            AsyncServerStreaming,
-            Duplex,
-            AsyncClientStreaming,
-            ClientStreamingServer,
-            AsyncUnaryServer,
-            AsyncUpdating,
-            HTC,
-            DispatchingMultiClient,
-            DVWCalculus
-        }
-
-        public TaskMonitor(int millisecondForPolling)
+            20,
+            40,
+            10,
+            10,
+            14
+        };
+        public TaskMonitor(int millisecondForPolling, Serilog.ILogger logger)
         {
             TimeMSToShow = millisecondForPolling;
 
-            foreach (TypeOfTask t in System.Enum.GetValues(typeof(TypeOfTask)))
+            foreach (TypeOfTask t in Enum.GetValues(typeof(TypeOfTask)))
             {
                 _processAverageTime[t] = new();
 
             }
-        }
 
-        public bool ToShow(TypeOfTask t)
-        {
-            if (t != TypeOfTask.Default && t != TypeOfTask.AsyncServerStreaming)
-            {
-                return true;
-            }
-
-            return false;
+            Logger = logger;
         }
         public record TaskObject
         {
@@ -99,20 +89,6 @@ namespace TaskMonitor
         private ConcurrentDictionary<int, TaskObject> _tasks = new ConcurrentDictionary<int, TaskObject>();
         private ConcurrentDictionary<TypeOfTask, ConcurrentDictionary<string, TaskTypeInfo>> _processAverageTime { get; set; } = new ConcurrentDictionary<TypeOfTask, ConcurrentDictionary<string, TaskTypeInfo>>();
 
-        public int TimeMSToShow { get; private set; } = 60000;
-        public Serilog.ILogger? Logger { get; set; } = null;
-        public string MonitorName { get; set; } = "Default monitor";
-
-        private List<int> ColumnsWidth { get; set; } = new List<int>()
-        {
-            20,
-            40,
-            10,
-            10,
-            14
-        };
-
-
         private string FillText(char t, int columnIndex)
         {
             return new string(t, ColumnsWidth[columnIndex]);
@@ -154,18 +130,15 @@ namespace TaskMonitor
 
                 foreach (var typeTask in _processAverageTime)
                 {
-                    if (ToShow(typeTask.Key))
+                    foreach (var requestMethodKV in typeTask.Value)
                     {
-                        foreach (var requestMethodKV in typeTask.Value)
+                        if (requestMethodKV.Value is null)
                         {
-                            if (requestMethodKV.Value is null)
-                            {
-                                continue;
-                            }
-
-                            text += $"{PadRightText(typeTask.Key.ToString(), 0)}| {PadRightText(requestMethodKV.Key, 1)}| {PadRightText(requestMethodKV.Value.Average.ToString("F3"), 2)}| {PadRightText(requestMethodKV.Value.PercentageChange.ToString("+000.00;-000.00;000.00"), 3)}| {PadRightText(requestMethodKV.Value.Count.ToString(), 4)}|\n";
-                            requestMethodKV.Value.SetLast();
+                            continue;
                         }
+
+                        text += $"{PadRightText(typeTask.Key.ToString(), 0)}| {PadRightText(requestMethodKV.Key, 1)}| {PadRightText(requestMethodKV.Value.Average.ToString("F3"), 2)}| {PadRightText(requestMethodKV.Value.PercentageChange.ToString("+000.00;-000.00;000.00"), 3)}| {PadRightText(requestMethodKV.Value.Count.ToString(), 4)}|\n";
+                        requestMethodKV.Value.SetLast();
                     }
                 }
 
@@ -271,14 +244,6 @@ namespace TaskMonitor
         private void MeasureTime(Task t)
         {
 
-        }
-
-        private bool ToCheck(TypeOfTask type)
-        {
-            if (type == TypeOfTask.AsyncServerStreaming || type == TypeOfTask.AsyncUpdating)
-                return true;
-
-            return false;
         }
 
         public int GetActiveTaskCount()

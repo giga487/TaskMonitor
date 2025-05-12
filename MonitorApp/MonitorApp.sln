@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35919.96 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonitorApp", "MonitorApp.csproj", "{4D898265-2A22-453C-94F2-006374E4F6D9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskMonitor", "..\TaskMonitor\TaskMonitor.csproj", "{48C9DC83-B56F-410A-8646-24D3543F5B9D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4D898265-2A22-453C-94F2-006374E4F6D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D898265-2A22-453C-94F2-006374E4F6D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D898265-2A22-453C-94F2-006374E4F6D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D898265-2A22-453C-94F2-006374E4F6D9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{48C9DC83-B56F-410A-8646-24D3543F5B9D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{48C9DC83-B56F-410A-8646-24D3543F5B9D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{48C9DC83-B56F-410A-8646-24D3543F5B9D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{48C9DC83-B56F-410A-8646-24D3543F5B9D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {ACDF58B8-3B65-4C47-9737-53BA26EAE4CD}
+	EndGlobalSection
+EndGlobal

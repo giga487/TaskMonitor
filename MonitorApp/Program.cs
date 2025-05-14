@@ -20,14 +20,19 @@ namespace MonitorApp
 
             TaskTest test = new TaskTest(Logger, tMon);
 
+            int iteration = 10000;
+
             Stopwatch stopwatch = Stopwatch.StartNew();
-            test.CreatingLotsOfLittleTasksParallelForEach(120_000);
+            test.CreatingLotsOfLittleTasksParallelForEach(iteration);
             Logger?.Information($"#####  Executed parallel for each {stopwatch.ElapsedMilliseconds} #########");
+
+            var t5 = test.CreatingLotsOfCountWithParallelForEACHAsync(iteration);
 
 
             stopwatch.Restart();
-            test.CreatingLotsOfCount(120_000);
+            test.CreatingLotsOfCount(iteration);
             Logger?.Information($"#####  Executed count in {stopwatch.ElapsedMilliseconds} #########");
+
 
 
             //List<Task> tasks = new List<Task>();    
@@ -38,7 +43,7 @@ namespace MonitorApp
 
             //Task.WaitAll(t);
 
-            Task t2 = new Task(() => test.CreatingLotsOfLittleTasks(120_000));
+            Task t2 = new Task(() => test.CreatingLotsOfLittleTasks(iteration));
             tMon.AddTask(t2, "Monitor", TaskMonitor.Common.TypeOfTask.Task2, "Creating lots of tasks");
             t2.Start();
 
@@ -120,6 +125,20 @@ namespace MonitorApp
                 }
                 i++;
             });
+        }
+
+        public async Task CreatingLotsOfCountWithParallelForEACHAsync(int numberOfTasks)
+        {
+            var rnd = new ThreadLocal<Random>(() => new Random());
+
+            var t = Parallel.ForEachAsync(Enumerable.Range(0, numberOfTasks), async (item, cancellationToken) =>
+            {
+                int valueToReach = rnd.Value.Next(5000, 5_000_000);
+                await LittleTask(valueToReach);
+            });
+
+            _tMon.AddTask(t, "Monitor", TaskMonitor.Common.TypeOfTask.Task2, "Creating lots of tasks, PARALLEL ASYNC");
+            await t;
         }
 
         public void CreatingLotsOfCount(int numberOfTasks)
